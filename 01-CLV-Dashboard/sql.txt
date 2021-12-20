@@ -1,0 +1,37 @@
+WITH arpu_table as (
+    select year_month, count(distinct(CUST_CODE)) as number_customer, count(CUST_CODE) as number_transaction, 
+    sum(spend) as total_revenue, (sum(spend) / count(distinct(CUST_CODE))) as arpu,
+    sum(spend) / count(CUST_CODE) as avg_ticketsize
+    from( 
+        select CUST_CODE,
+        format_datetime("%Y%m",parse_date("%Y%m%d",CAST( SHOP_DATE AS STRING ))) as year_month,
+        SPEND
+        FROM `nodal-pod-331409.sample_dataset.Supermarket`
+        where CUST_CODE is not null
+    )
+    group by year_month
+    order by year_month
+),
+clv_table as (
+    select year_month, customer_current_month, customer_next_month,
+    (customer_current_month - customer_next_month) / customer_current_month as churn,
+    1/((customer_current_month - customer_next_month) / customer_current_month) as alt
+    from (
+        select year_month, customer_current_month,
+        lead(customer_current_month) over (order by year_month) as customer_next_month
+        from (
+            select count(CUST_CODE) as customer_current_month,format_datetime("%Y%m",parse_date("%Y%m%d",CAST( SHOP_DATE AS STRING ))) as year_month,
+            FROM `nodal-pod-331409.sample_dataset.Supermarket`
+            where CUST_CODE is not null
+            group by year_month
+            order by year_month
+        )
+        order by year_month
+    )
+)
+
+select r.*, c.customer_current_month, c.customer_next_month, c.alt, (r.arpu * 0.2 * c.alt) as clv_all
+from arpu_table r
+join clv_table c
+on r.year_month = c.year_month
+order by year_month
